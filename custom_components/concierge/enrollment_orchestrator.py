@@ -237,6 +237,7 @@ class EnrollmentOrchestrator:
         subject_id: str,
         session_id: str,
         sample_items: list[dict[str, Any]],
+        current_voiceprint_id: str = "",
     ) -> dict[str, Any]:
         operation = self._voice_identity_generate_operation()
         execute = getattr(operation, "execute", None)
@@ -277,7 +278,7 @@ class EnrollmentOrchestrator:
             timeout_seconds=30.0,
             activate=True,
             generation_id=None,
-            current_voiceprint_id=None,
+            current_voiceprint_id=(str(current_voiceprint_id).strip() or None),
             voice_profile_id=voice_profile_id,
             enrollment_reference=session_id,
             correlation_id=f"concierge_{session_id}",
@@ -1711,6 +1712,7 @@ class EnrollmentOrchestrator:
             subject_id=generation_subject_id,
             session_id=enrollment_session.session_id,
             sample_items=list(enrollment_session.sample_items),
+            current_voiceprint_id=existing_voice.speaker_embedding_id,
         )
         if not generation["success"]:
             generation_reason = str(generation.get("reason_code", "") or "generation_failed").strip().lower()

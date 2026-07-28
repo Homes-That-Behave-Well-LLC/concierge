@@ -407,6 +407,12 @@ They are not identity authority and do not define a conversation owner model.
 
 Speaker handoff is valid within the same conversation.
 
+> **Governance confirmation (2026-07-27)**: Concierge is the authoritative
+> source of these correlation keys — they are supplied by Concierge on each
+> `get_identity_context` call, not derived by Voice Identity from Home
+> Assistant's STT contract (which is correlation-blind; see
+> `voice_identity/docs/architecture/ADR_CORRELATION_BOUNDARY_CORRECTION.md`).
+
 ### 27.3 TTL Clarification
 
 Attribution context is a short-lived bridge from audio-time to text-time.

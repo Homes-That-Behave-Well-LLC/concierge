@@ -8,3 +8,6 @@ htmlcov/
 .vscode/
 *.log
 .DS_Store
+tmp/
+tmp_*.py
+tmp_*.txt

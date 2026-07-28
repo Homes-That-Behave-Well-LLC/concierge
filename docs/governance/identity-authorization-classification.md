@@ -114,6 +114,13 @@ keys:
 
 `conversation_id` is correlation context and not identity authority.
 
+> **Governance confirmation (2026-07-27)**: These correlation keys are
+> supplied by Concierge itself (from its own conversation/intent execution
+> context) on each `get_identity_context` call — they are never derived from
+> Home Assistant's STT contract. No authorization classification decision in
+> this document depends on STT-level context ownership; see
+> `voice_identity/docs/architecture/ADR_CORRELATION_BOUNDARY_CORRECTION.md`.
+
 ## Safe Reason Codes
 
 Required normalized safe reason codes include:

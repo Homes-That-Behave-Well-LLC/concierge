@@ -4,6 +4,20 @@
 
 Proposed
 
+> **Amendment (2026-07-27)**: Aligned with
+> `voice_identity/docs/architecture/ADR_CORRELATION_BOUNDARY_CORRECTION.md`.
+> Home Assistant's STT contract was verified correlation-blind (installed HA
+> 2026.7.3 source) — Voice Identity's audio-time attribution step below
+> produces only unbound speaker evidence (`SpeakerEvidenceRecord`), not a
+> correlated attribution record. Concierge is the authoritative source of
+> `conversation_id`/`device_id`/`satellite_id`/`pipeline_id`/`room_id`, and
+> supplies them when it calls `get_identity_context`; Voice Identity joins
+> that context with the most recent safe-matching speaker evidence to
+> assemble `RuntimeAttributionRecord` at that moment. This ADR's ownership
+> boundaries (below) were already correct; this note corrects only the
+> earlier implicit assumption that audio-time attribution could itself carry
+> correlation identifiers.
+
 ## Date
 
 2026-07-23
@@ -42,11 +56,18 @@ Approved runtime lifecycle:
 
 Assist Pipeline or audio-capable ingress
 
--> Voice Identity runtime attribution while audio is available
+-> Voice Identity produces unbound speaker evidence (`SpeakerEvidenceRecord`)
+   while audio is available (no conversation/device/room identifiers exist
+   at this stage — Home Assistant's STT contract does not provide them)
 
--> Voice Identity-owned Attribution Context Store (short-lived)
+-> Voice Identity-owned Speaker Evidence Store (short-lived, unbound)
 
--> Concierge Conversation Agent lookup via correlation context
+-> Concierge Conversation Agent supplies its own correlation context
+   (`conversation_id`, `device_id`, `satellite_id`, `pipeline_id`, `room_id`)
+   on a `get_identity_context` lookup
+
+-> Voice Identity joins the most recent safe-matching speaker evidence with
+   that correlation context to assemble `RuntimeAttributionRecord`
 
 -> Concierge authorization classification and intent execution
 
@@ -169,11 +190,18 @@ policy outcomes.
 ## Runtime Flow
 
 1. Audio-capable ingress receives spoken input.
-2. Voice Identity performs attribution using audio-time evidence.
-3. Voice Identity stores a short-lived attribution record.
-4. Concierge Conversation Agent receives conversation input context.
+2. Voice Identity performs speaker comparison using audio-time evidence and
+   produces an unbound `SpeakerEvidenceRecord` (no correlation identifiers
+   — none are available to a custom STT provider under Home Assistant's STT
+   contract).
+3. Voice Identity stores the short-lived, unbound evidence record.
+4. Concierge Conversation Agent receives conversation input context,
+   including `conversation_id`/`device_id`/`satellite_id` it already has
+   from Home Assistant's conversation execution context.
 5. Concierge resolves room context through Foundation-linked room resolution.
-6. Concierge resolves current speaker attribution via correlation keys.
+6. Concierge calls Voice Identity's `get_identity_context`, supplying its own
+   correlation context; Voice Identity joins this with the most recent
+   safe-matching speaker evidence to assemble `RuntimeAttributionRecord`.
 7. Concierge classifies identity requirement for intended action.
 8. Concierge applies policy before intent execution.
 9. Concierge emits deterministic response with safe reason code and policy

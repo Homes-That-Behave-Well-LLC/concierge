@@ -10,6 +10,7 @@ import pytest
 
 from homeassistant import loader
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.concierge import diagnostics as diagnostics_module
@@ -90,6 +91,10 @@ async def setup_integration(
     reconciliation_module.resolve_voice_enrollment_root = lambda destination_uri: storage_root
     diagnostics_module.resolve_voice_enrollment_root = lambda destination_uri: storage_root
     orchestrator_module.resolve_voice_enrollment_root = lambda destination_uri: storage_root
+
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    assert await async_setup_component(hass, "assist_pipeline", {})
 
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(

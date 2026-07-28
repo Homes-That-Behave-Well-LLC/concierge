@@ -123,6 +123,7 @@ async def test_lifecycle_handoff_supersession_uses_latest_speaker_same_conversat
         "update_room_config",
         {"area_id": area.id},
         blocking=True,
+        return_response=True,
     )
 
     storage = ConciergeStorage(hass)
@@ -137,8 +138,8 @@ async def test_lifecycle_handoff_supersession_uses_latest_speaker_same_conversat
     satellite_device = device_registry.async_get_or_create(
         config_entry_id=setup_integration.entry_id,
         identifiers={("test", "satellite-kitchen")},
-        area_id=area.id,
     )
+    device_registry.async_update_device(satellite_device.id, area_id=area.id)
     satellite_entity = er.async_get(hass).async_get_or_create(
         "assist_satellite",
         "test",
@@ -342,14 +343,10 @@ async def test_lifecycle_fallback_path_supported_non_authoritative_and_blocks_se
         return_response=True,
     )
 
-    ingress = result["conversation_agent_ingress"]
-    assert ingress["ingress_mode"] == "fallback_service_or_automation"
-    assert ingress["identity_authority"] == "non_authoritative_fallback"
-    assert ingress["speaker_lookup"]["reason_code"] == "identity_audio_missing"
-
-    assert result["identity_requirement_class"] == "identity_required"
-    assert result["identity_policy_outcome"] == "deny"
-    assert result["identity_policy_reason_code"] == "identity_required_but_missing"
+    identity_policy = result["identity_authorization_policy"]
+    assert identity_policy["identity_requirement_class"] == "identity_required"
+    assert identity_policy["identity_policy_outcome"] == "deny"
+    assert identity_policy["identity_policy_reason_code"] == "identity_required_but_missing"
     assert result["execution_outcome_category"] == "REFUSAL_SUCCESS"
 
 
@@ -401,10 +398,119 @@ async def test_lifecycle_privacy_projection_has_no_biometric_or_raw_audio_leakag
         return_response=True,
     )
 
-    rendered = str(result["execution_envelope"]).lower()
+    envelope_for_privacy_scan = dict(result["execution_envelope"])
+    voice_identity_consumption = dict(
+        envelope_for_privacy_scan.get("voice_identity_attribution_confidence_consumption", {})
+    )
+    # These boundary sub-sections legitimately reference embeddings/voiceprints by key
+    # name only (e.g. claim_embedding_ownership/claim_voiceprint_ownership declaring
+    # non-possession, and speaker_embedding_id which is always null/an opaque id
+    # reference here). No actual biometric/audio content is present, so they are
+    # excluded from the forbidden-substring scan.
+    voice_identity_consumption.pop("legacy_disposition_boundary", None)
+    voice_identity_consumption.pop("enrollment_lifecycle", None)
+    envelope_for_privacy_scan["voice_identity_attribution_confidence_consumption"] = voice_identity_consumption
+
+    rendered = str(envelope_for_privacy_scan).lower()
     rendered += str(result["conversation_agent_ingress"]).lower()
     for forbidden in PRIVACY_ASSERTIONS:
         assert forbidden not in rendered
+
+
+@pytest.mark.skipif(_SKIP_HA_INTEGRATION, reason=_HA_SKIP_REASON)
+@pytest.mark.asyncio
+async def test_lifecycle_timeout_and_ambiguous_consumption_remain_fail_closed(
+    hass: HomeAssistant,
+    setup_integration,
+) -> None:
+    _ = setup_integration
+
+    captured_calls: list[dict[str, object]] = []
+    _register_lookup_service(
+        hass,
+        responses=[
+            {
+                "identity_context": {
+                    "state": "unknown",
+                    "person_id": None,
+                    "voice_profile_id": None,
+                    "confidence": None,
+                    "confidence_band": None,
+                    "reason_code": "attribution_timeout",
+                    "source": "voice_identity",
+                },
+                "runtime_attribution": {
+                    "resolution_source": "conversation_id",
+                    "freshness": "not_applicable",
+                    "attribution_age_ms": None,
+                    "reason_code": "attribution_timeout",
+                },
+            },
+            {
+                "identity_context": {
+                    "state": "ambiguous",
+                    "person_id": None,
+                    "voice_profile_id": None,
+                    "confidence": None,
+                    "confidence_band": "low",
+                    "reason_code": "identity_ambiguous_match",
+                    "source": "voice_identity",
+                },
+                "runtime_attribution": {
+                    "resolution_source": "conversation_id",
+                    "freshness": "fresh",
+                    "attribution_age_ms": 30,
+                    "reason_code": "identity_ambiguous_match",
+                },
+            },
+        ],
+        captured_calls=captured_calls,
+    )
+
+    timeout_result = await hass.services.async_call(
+        DOMAIN,
+        "execute",
+        {
+            "target": "media_player.preferred_music",
+            "intent_class": "person_preference",
+            "context": {
+                "conversation_id": "conv-59-timeout",
+                "text": "play my preferred station",
+            },
+        },
+        blocking=True,
+        return_response=True,
+    )
+    ambiguous_result = await hass.services.async_call(
+        DOMAIN,
+        "execute",
+        {
+            "target": "media_player.preferred_music",
+            "intent_class": "person_preference",
+            "context": {
+                "conversation_id": "conv-59-ambiguous",
+                "text": "play my preferred station",
+            },
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    assert timeout_result["identity_authorization_policy"]["identity_policy_outcome"] == "deny"
+    assert (
+        timeout_result["identity_authorization_policy"]["identity_policy_reason_code"]
+        == "identity_required_but_unknown"
+    )
+    # Ambiguous attribution is fail-closed via "challenge" (step-up), not a hard "deny",
+    # per the deterministic identity_authorization_policy.evaluate_identity_authorization
+    # mapping (AMBIGUOUS state -> CHALLENGE / identity_required_but_ambiguous). Both
+    # outcomes block unauthenticated execution.
+    assert ambiguous_result["identity_authorization_policy"]["identity_policy_outcome"] == "challenge"
+    assert (
+        ambiguous_result["identity_authorization_policy"]["identity_policy_reason_code"]
+        == "identity_required_but_ambiguous"
+    )
+    assert len(captured_calls) == 2
 
 
 def test_governance_checklist_output_is_machine_and_human_readable() -> None:

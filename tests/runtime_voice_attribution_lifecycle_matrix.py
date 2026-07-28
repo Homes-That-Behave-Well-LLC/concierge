@@ -52,6 +52,10 @@ FALLBACK_SCENARIOS: tuple[dict[str, str], ...] = (
         "id": "fallback_missing_context_reason_code",
         "reason_code": "identity_context_missing",
     },
+    {
+        "id": "fallback_timeout_reason_code",
+        "reason_code": "attribution_timeout",
+    },
 )
 
 AUTHORIZATION_SCENARIOS: tuple[dict[str, Any], ...] = (
