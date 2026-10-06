@@ -2,6 +2,6 @@
   "name": "Concierge",
   "content_in_root": false,
   "country": "US",
-  "homeassistant": "2024.12.0",
+  "homeassistant": "2024.7.0",
   "render_readme": true
 }
